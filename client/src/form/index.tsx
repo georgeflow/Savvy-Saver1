@@ -5,77 +5,104 @@ import Input from './Input';
 import { useParams, useNavigate } from 'react-router-dom';
 import Close from './Close';
 import CoinList from '../CoinList';
-import { Item, SelectIthem, Response } from '../types';
+import {
+    Item,
+    SelectIthem,
+    Response,
+    TIME_SERIES_MONTHLY_RESPONSE,
+    Monthly_Time_Series,
+} from '../types';
 import { useContextHook } from '../Context';
 
-
 const Form = () => {
-    let [coinId, setCoinId] = useState('');
-    let [selectedCoin, setSelectedCoin] = useState<SelectIthem>(
-        {} as SelectIthem,
-    );
+    let [selectedCoin, setSelectedCoin] = useState<SelectIthem>({
+        id: 'TSCO.LON',
+        name: 'Tesco PLC',
+    } as SelectIthem);
     let [list, setList] = useState<SelectIthem[]>([] as SelectIthem[]); //mixing types
     let [search, setSearch] = useState('');
-    let currencyId = 'USD';
-    let [price, setPrice] = useState(0);
+
     let [amount, setAmount] = useState(0);
     let [total, setTotal] = useState(0);
+
+    let [date, setDate] = useState('');
+    let [pricePerTime, setPricePerTime] = useState<Monthly_Time_Series>(
+        {} as Monthly_Time_Series,
+    );
+
     let navigate = useNavigate();
-    let { assets, setAssets, API_KEY } = useContextHook();
+    let { API_KEY } = useContextHook();
+    let BASE_URL = `https://www.alphavantage.co/query?apikey=${API_KEY}`;
 
     useEffect(() => {
-        setTotal(price * amount);
-    }, [price, amount]);
-
-    function handleSelectAsset() {
-        setCoinId(selectedCoin.id);
-    }
+        //price will be taken only after historical request will be made
+        if (pricePerTime['4. close']) {
+            setTotal(+pricePerTime['4. close'] * amount);
+        }
+    }, [pricePerTime, amount]);
 
     useEffect(() => {
         if (search) {
-            fetch(
-                `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${search}&apikey=${API_KEY}`,
-            )
+            fetch(`${BASE_URL}&function=SYMBOL_SEARCH&keywords=${search}`)
                 .then((data) => data.json())
                 .then((data: { bestMatches: Response[] }) => {
-                    let list: SelectIthem[] = data.bestMatches.map(
-                        (i: Response) => ({
+                    if (data.bestMatches) {
+                        let list: SelectIthem[] = data.bestMatches.map((i: Response) => ({
                             id: i['1. symbol'],
                             name: i['2. name'],
-                        }),
-                    );
-                    setList(list);
+                        }));
+                        setList(list);
+                    } else {
+                        setList([
+                            {
+                                id: 'TSCO.LON',
+                                name: 'Tesco PLC',
+                            },
+                        ]);
+                    }
                 });
         } else {
-            setList([])
+            setList([]);
         }
-    }, [search])
+    }, [search]);
+    function timeTravelHandler() {
+        if (selectedCoin.id && date) {
+            fetch(
+                `${BASE_URL}&function=TIME_SERIES_MONTHLY&symbol=${selectedCoin.id}`,
+            )
+                .then((r) => r.json())
+                .then((data: TIME_SERIES_MONTHLY_RESPONSE) => {
+                    if (data['Monthly Time Series']) {
+                        let months = data['Monthly Time Series'];
+                        let DATE = new Date(date);
+                        let dateStr =
+                            DATE.getFullYear() +
+                            '-' +
+                            (DATE.getMonth() + 1).toString().padStart(2, '0');
+                        let key = Object.keys(months).find((key) =>
+                            key.startsWith(dateStr),
+                        );
 
+                        if (key) {
+                            setPricePerTime(months[key]);
+                        }
+                    } else {
+                        setPricePerTime({
+                            '1. open': '144.2500',
+                            '2. high': '147.7275',
+                            '3. low': '139.7600',
+                            '4. close': '146.8300',
+                            '5. volume': '84274205',
+                        });
+                    }
+                });
+        }
+    }
 
     return (
         <div className='BUY'>
             <div className='BUY-wrapper'>
                 <div className='div'>
-                    <header className='header'>
-                        <div className='add-note'>
-                            {coinId ? (
-                                <div className='frame-6'>
-                                    <img className='bitcoin' alt='Bitcoin' src='bitcoin-1.svg' />
-                                    <div className='frame-7'>
-                                        <div className='text-wrapper-5'>
-                                            {coinId?.toUpperCase()}
-                                        </div>
-                                        <div className='text-wrapper-6'>Bitcoin</div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className='text-wrapper-5'>Add Asset</div>
-                            )}
-                            <Close />
-                        </div>
-                    </header>
-
-
                     <div className='note'>
                         <Input
                             label=''
@@ -92,23 +119,27 @@ const Form = () => {
                             list={list}
                         />
                     </div>
-                    {selectedCoin.id && (
-                        <div className='buttons' onClick={handleSelectAsset}>
-                            Add Asset
-                        </div>
-                    )}
-
-                    <div
-                        className='buttons cancel'
-                        onClick={() => navigate('/main/portfolio')}
-                    >
-                        Cancel
+                    <div>
+                        <input
+                            type='date'
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                        />
                     </div>
 
+                    <Input
+                        label='amount'
+                        value={amount}
+                        type='number'
+                        onChange={setAmount}
+                        unit={'Your amount'}
+                    />
                 </div>
+                <button onClick={timeTravelHandler}>TIME TRAVEL</button>
+                <div>{total}</div>
             </div>
         </div>
     );
 };
 
-export default Form
+export default Form;
